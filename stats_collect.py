@@ -61,6 +61,17 @@ for i in systems:
         dict1[j]=login_handle
     handles[i]=dict1
 
+def get_output_only(output,cmd_pat=False,prompt_pat=False):
+    tmp1= output.split('\n')
+    out=[];
+    for i in tmp1:
+        i1= i.strip()
+        c1= cmd_pat.replace('+','\+')
+        if (re.search(c1,i1) is None) and (re.search(prompt_pat,i1) is None):
+            out.append(i1)
+    return out
+    
+
 def exec_this_cli_cmd(cmd,get_input=False):
     if get_input:
         cmd=raw_input("Enter the command to execute:")
@@ -75,7 +86,8 @@ def exec_this_shell_cmd(cmd,this_handle,get_input=False):
     this_handle.sendline(cmd)
     this_handle.expect(COMMAND_PROMPT,timeout=160)
     output= this_handle.before
-    return output
+    output1= get_output_only(output,cmd_pat=cmd,prompt_pat=COMMAND_PROMPT)
+    return output1
 
 
 def show_systems():
