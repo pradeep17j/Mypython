@@ -62,13 +62,14 @@ for i in systems:
     handles[i]=dict1
 
 def get_output_only(output,cmd_pat=False,prompt_pat=False):
+    import pdb; pdb.set_trace()
     tmp1= output.split('\n')
     out=[];
-    for i in tmp1:
-        i1= i.strip()
-        c1= cmd_pat.replace('+','\+')
-        if (re.search(c1,i1) is None) and (re.search(prompt_pat,i1) is None):
-            out.append(i1)
+    #Except the first and last line, consider all other lines as ouput
+    # Take out first line
+    out.pop(0)
+    #take out last line
+    out.pop()
     return out
     
 
