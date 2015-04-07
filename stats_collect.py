@@ -4,6 +4,24 @@ sys.path.append("/u/ppradeepkumar/MyPython/Python-2.7.6/")
 import pexpect
 import re
 
+class va_box_prompt:
+    COMMAND_PROMPT=None
+    CLI_PROMPT=None
+    CLI_PROMPT1=None
+    def __init__(self):
+        self.COMMAND_PROMPT= re.compile('\[admin\@\S+ \S+\]#')
+        self.CLI_PROMPT= re.compile('\S+\s*(>|#|\(config\)\s*#)')
+        self.CLI_PROMPT1= re.compile('\S+\s*\(config\)\s*#')
+
+class va_box(va_box_prompt):
+    host_name=None
+    shell=None
+    cli=None
+    
+
+    
+
+
 cmd= 'ssh'
 params= ''' -oStrictHostKeyChecking=no
     -oCheckHostIP=no -oForwardX11=no
@@ -61,25 +79,25 @@ for i in systems:
         dict1[j]=login_handle
     handles[i]=dict1
 
-def get_output_only(output,cmd_pat=False,prompt_pat=False):
-    import pdb; pdb.set_trace()
-    tmp1= output.split('\n')
-    out=[];
+def get_output_only(output):
+    out= output.split('\n')
     #Except the first and last line, consider all other lines as ouput
     # Take out first line
     out.pop(0)
     #take out last line
     out.pop()
-    return out
+    out1= map(str.strip,out)
+    return out1
     
 
-def exec_this_cli_cmd(cmd,get_input=False):
+def exec_this_cli_cmd(cmd,this_handle,get_input=False):
     if get_input:
         cmd=raw_input("Enter the command to execute:")
-    child.sendline(cmd)
-    child.expect(CLI_PROMPT1,timeout=160)
-    output= child.before
-    return output
+    this_handle.sendline(cmd)
+    this_handle.expect(CLI_PROMPT1,timeout=160)
+    output= this_handle.before
+    output1= get_output_only(output)
+    return output1
 
 def exec_this_shell_cmd(cmd,this_handle,get_input=False):
     if get_input:
@@ -87,7 +105,7 @@ def exec_this_shell_cmd(cmd,this_handle,get_input=False):
     this_handle.sendline(cmd)
     this_handle.expect(COMMAND_PROMPT,timeout=160)
     output= this_handle.before
-    output1= get_output_only(output,cmd_pat=cmd,prompt_pat=COMMAND_PROMPT)
+    output1= get_output_only(output)
     return output1
 
 
@@ -95,16 +113,43 @@ def show_systems():
     for i in handles.keys():
         print i
 
+loadgen_num=1
+def start_loadgen():
+    loadgen_shell = handles[loadgen]['shell']
+
+    cmd= '/var/loadgen_edge -f /var/cfg/'+'loadgen-'+ loadgen_num +'.xml'+' --test-duration 1500 --read-op --burst-rate 65536 --num-ops 2,100 &'
+    count=0
+    for i in range(1,10):
+        exec_this_shell_cmd(cmd,loadgen_shell)
+        loadgen_num= loadgen_num+i
+        
+
 def get_stats():
-    import pdb; pdb.set_trace()
     date_cmd= 'date +\'%F %T\''
-    for i in handles.keys():
-        if(i is tarpon):
-            shell= handles[i]['shell']
-            cli= handles[i]['cli']
-            start_time= exec_this_shell_cmd(date_cmd,shell)
-            time.sleep(10)
-            end_time= exec_this_shell_cmd(date_cmd,shell)
+
+    tarpon_shell= handles[tarpon]['shell']
+    tarpon_cli= handles[tarpon]['cli']
+    probe_shell= handles[probe]['shell']
+    probe_cli= handles[probe]['cli'] 
+
+    core_start_time= exec_this_shell_cmd(date_cmd,tarpon_shell)
+    core_start_time[0]= "'"+core_start_time[0].replace('-','/')+"'"
+    edge_start_time= exec_this_shell_cmd(date_cmd,probe_shell)
+    edge_start_time[0]= "'"+edge_start_time[0].replace('-','/')+"'" 
+    time.sleep(10)
+    core_end_time= exec_this_shell_cmd(date_cmd,tarpon_shell)
+    core_end_time[0]= "'"+core_end_time[0].replace('-','/')+"'"
+    edge_end_time= exec_this_shell_cmd(date_cmd,probe_shell)
+    edge_end_time[0]= "'"+edge_end_time[0].replace('-','/')+"'"
+
+    core_stats_cmd= "show stats storage filer-latency start-time "
+    core_stats_cmd= core_stats_cmd + core_start_time[0] + ' end-time ' + core_end_time[0] + ' filer all'
+    import pdb; pdb.set_trace()
+    tarpon_stats= exec_this_cli_cmd(core_stats_cmd,tarpon_cli)
+
+    probe_stats_cmd= "show stats storage lun-latency start-time "
+    probe_stats_cmd= probe_stats_cmd + edge_start_time[0] + ' end-time ' + edge_end_time[0] + ' lun all'
+    probe_stats= exec_this_cli_cmd(probe_stats_cmd,probe_cli)
 
 
 while 1:
@@ -119,7 +164,7 @@ while 1:
     print in1
 
     options = {
-            '10':show_systems,
+            '10':start_loadgen,
             '20':exit,
             '30':get_stats,
 #            '31':add_luns,
