@@ -3,12 +3,24 @@ import sys
 sys.path.append("/u/ppradeepkumar/MyPython/Python-2.7.6/")
 import pexpect
 import re
+import json
 
 
 loadgen_cmd='/var/loadgen_edge -f '
 loadgen_cfg=" /var/cfg/loadgen-{:d}.xml "
 loadgen_args=" --test-duration 1500 --read-op --lba-cnt 19531250 --burst-rate 65536 --num-ops 2,100 > "
 loadgen_logs=" logx/{:d}.txt 2>&1 &"
+
+
+class file_op():
+    handle=None
+    def __init__(self):
+        self.handle= open('stats_collect','w')
+    def write_data(self,data):
+        for d in data:
+            self.handle.write("%s\n" % d)
+
+    
 
 class va_box_prompt(object):
     COMMAND_PROMPT=None
@@ -34,16 +46,17 @@ class va_box(va_box_prompt):
 
 class loadgen_box(va_box):
     instance=1
-
     def get_login(self):
         super(loadgen_box,self).get_login()
         super(loadgen_box,self).exec_on_shell('cd /var')
 
-    def start_loadgen_cmd(self):
-        cfg= loadgen_cfg.format(self.instance)
-        log= loadgen_logs.format(self.instance)
+    def kill_loadgen(self):
+        super(loadgen_box,self).exec_on_shell('pkill loadgen')
+
+    def start_loadgen_cmd(self,count):
+        cfg= loadgen_cfg.format(count)
+        log= loadgen_logs.format(count)
         self.exec_on_shell(loadgen_cmd+cfg+loadgen_args+log)
-        self.instance+=1
 
 stor_stats= 'show stats storage '
 stor_stats1= '{:s} start-time \'{:s}\' end-time \'{:s}\' {:s} '
@@ -130,7 +143,6 @@ probe.hostname='oak-sh610'
 probe.get_login()
 
 # Edge on which loadgen runs
-#loadgen= va_box()
 loadgen= loadgen_box()
 loadgen.hostname='oak-sh584'
 loadgen.get_login()
@@ -140,7 +152,7 @@ tarpon= va_box()
 tarpon.hostname='oak-sh809'
 tarpon.get_login()
 
-#import pdb; pdb.set_trace()
+f= file_op()
 
 
 def show_systems():
@@ -149,9 +161,11 @@ def show_systems():
 
 def start_loadgen():
     count=0
-    for i in range(1,10):
-        loadgen.start_loadgen_cmd()
+    end= 10 * loadgen.instance;
+    for i in range(1,end):
+        loadgen.start_loadgen_cmd(i)
         time.sleep(1)
+    loadgen.instance+=1
         
 def clear_restart_edge():
     probe.exec_on_cli("service storage restart clean")
@@ -164,7 +178,6 @@ def get_stats():
     date_cmd= 'date +\'%F %T\''
     core1= stats_collect()
     edge1= stats_collect()
-
 
     core_start_time= tarpon.exec_on_shell(date_cmd)
     core1.start_time= core_start_time[0]
@@ -187,22 +200,28 @@ def get_stats():
     tmp.append('filer-bytes')
     tmp.append('filer all')
     tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tmp))
+    f.write_data(tarpon_stats)
 
     tmp=[]
     tmp.append('filer-latency')
     tmp.append('filer all')
     tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tmp))
+    f.write_data(tarpon_stats)
 
     tmp=[]
     tmp.append('lun-bytes')
     tmp.append('lun all')
     probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tmp))
+    f.write_data(probe_stats)
 
     tmp=[]
     tmp.append('lun-latency')
     tmp.append('lun all')
     probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tmp))
-
+    f.write_data(probe_stats)
+    import pdb; pdb.set_trace()
+    sep= "-"*20
+    f.write_data([sep])
 
 
 while 1:
