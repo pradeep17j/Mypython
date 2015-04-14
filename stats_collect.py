@@ -20,7 +20,39 @@ class file_op():
         for d in data:
             self.handle.write("%s\n" % d)
 
-    
+class metrics():
+    data=None  
+    def conv_bytes_to_kb(self):
+        return self.data/1000
+    def conv_mb_to_kb(self):
+        return self.data*1000
+    def conv_gb_to_kb(self):
+        return self.data*1000000
+
+
+class stats_proc(file_op):
+    rx1= re.compile('Total (data|bytes) read\s*:\s*(\S+)\s*(\S+)',re.IGNORECASE)
+    rx3= re.compile('Avg Read IO Time\s*:\s*(\S+)\s*(\S+)',re.IGNORECASE)
+    def read_stat(self,data): 
+        for i in data:
+            rx2= self.rx1.search(i)
+            if rx2:
+                m= metrics()
+                m.data= float(rx2.group(2))
+                if re.search(rx2.group(3),'GB',re.IGNORECASE):
+                    return m.conv_mb_to_kb()
+                if re.search(rx2.group(3),'MB',re.IGNORECASE):
+                    return m.conv_gb_to_kb()
+                if re.search(rx2.group(3),'Bytes',re.IGNORECASE):
+                    return m.conv_bytes_to_kb()
+    def read_latency(self,data):
+        for i in data:
+            rx4= self.rx3.search(i)
+            if rx4:
+               return rx4.group(1)+" "+ rx4.group(2) 
+ 
+
+
 
 class va_box_prompt(object):
     COMMAND_PROMPT=None
@@ -153,6 +185,7 @@ tarpon.hostname='oak-sh809'
 tarpon.get_login()
 
 f= file_op()
+s= stats_proc()
 
 
 def show_systems():
@@ -174,7 +207,6 @@ def restart_core():
     tarpon.exec_on_cli("service restart ")
 
 def get_stats():
-    import pdb; pdb.set_trace()
     date_cmd= 'date +\'%F %T\''
     core1= stats_collect()
     edge1= stats_collect()
@@ -196,29 +228,30 @@ def get_stats():
     core1.form_time()
     edge1.form_time()
 
-    tmp=[]
-    tmp.append('filer-bytes')
-    tmp.append('filer all')
-    tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tmp))
-    f.write_data(tarpon_stats)
+    tup=()
+    tup=('filer-bytes','filer all')
+    tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tup))
+    ret= str(s.read_stat(tarpon_stats))+' KB' 
+    f.write_data([ret])
 
-    tmp=[]
-    tmp.append('filer-latency')
-    tmp.append('filer all')
-    tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tmp))
-    f.write_data(tarpon_stats)
+    import pdb; pdb.set_trace()
+    tup=()
+    tup=('filer-latency','filer all')
+    tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tup))
+    ret= s.read_latency(tarpon_stats)
+    f.write_data([ret])
 
-    tmp=[]
-    tmp.append('lun-bytes')
-    tmp.append('lun all')
-    probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tmp))
-    f.write_data(probe_stats)
+    tup=()
+    tup=('lun-bytes','lun all')
+    probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tup))
+    ret= str(s.read_stat(probe_stats))+' KB' 
+    f.write_data([ret])
 
-    tmp=[]
-    tmp.append('lun-latency')
-    tmp.append('lun all')
-    probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tmp))
-    f.write_data(probe_stats)
+    tup=()
+    tup=('lun-latency','lun all')
+    probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tup))
+    ret= s.read_latency(probe_stats)
+    f.write_data([ret])
     import pdb; pdb.set_trace()
     sep= "-"*20
     f.write_data([sep])
@@ -231,6 +264,7 @@ while 1:
     print "\t\t30. Collect stats\n"
     print "\t\t31. Clean restart probe edge\n"
     print "\t\t32. restart core\n"
+    print "\t\t33. kill loadgens\n"
 #   import pdb; pdb.set_trace()
     in1=raw_input("Enter here:")
     print in1
@@ -241,6 +275,7 @@ while 1:
             '30':get_stats,
             '31':clear_restart_edge,
             '32':restart_core,
+            '33':kill_loadgen,
             }
 
     options[in1]()
