@@ -6,7 +6,7 @@ import re
 import json
 
 
-loadgen_cmd='/var/loadgen_edge -f '
+loadgen_cmd='/var/loadgen_edge.dbg -f '
 loadgen_cfg=" /var/cfg/loadgen-{:d}.xml "
 loadgen_args=" --test-duration 1500 --read-op --lba-cnt 19531250 --burst-rate 65536 --num-ops 2,100 > "
 loadgen_logs=" logx/{:d}.txt 2>&1 &"
@@ -15,7 +15,7 @@ loadgen_logs=" logx/{:d}.txt 2>&1 &"
 class file_op():
     handle=None
     def __init__(self):
-        self.handle= open('stats_collect','w')
+        self.handle= open('stats_collect.64k','w')
     def write_data(self,data):
         for d in data:
             self.handle.write("%s\n" % d)
@@ -33,18 +33,19 @@ class metrics():
 class stats_proc(file_op):
     rx1= re.compile('Total (data|bytes) read\s*:\s*(\S+)\s*(\S+)',re.IGNORECASE)
     rx3= re.compile('Avg Read IO Time\s*:\s*(\S+)\s*(\S+)',re.IGNORECASE)
+    delay=150
     def read_stat(self,data): 
         for i in data:
             rx2= self.rx1.search(i)
             if rx2:
                 m= metrics()
                 m.data= float(rx2.group(2))
-                if re.search(rx2.group(3),'GB',re.IGNORECASE):
-                    return m.conv_mb_to_kb()
                 if re.search(rx2.group(3),'MB',re.IGNORECASE):
-                    return m.conv_gb_to_kb()
+                    return m.conv_mb_to_kb()/self.delay
+                if re.search(rx2.group(3),'GB',re.IGNORECASE):
+                    return m.conv_gb_to_kb()/self.delay
                 if re.search(rx2.group(3),'Bytes',re.IGNORECASE):
-                    return m.conv_bytes_to_kb()
+                    return m.conv_bytes_to_kb()/self.delay
     def read_latency(self,data):
         for i in data:
             rx4= self.rx3.search(i)
@@ -62,11 +63,13 @@ class va_box_prompt(object):
         self.COMMAND_PROMPT= re.compile('\[admin\@\S+ \S+\]#')
         self.CLI_PROMPT= re.compile('\S+\s*(>|#|\(config\)\s*#)')
         self.CLI_PROMPT1= re.compile('\S+\s*\(config\)\s*#')
+        self.password= re.compile('password')
 
 class va_box(va_box_prompt):
     hostname=None
     shell=None
     cli=None
+    user='root'
     def get_login(self):
         login(self)
         login(self,access='cli')
@@ -74,6 +77,19 @@ class va_box(va_box_prompt):
         return exec_this_shell_cmd(self,cmd)
     def exec_on_cli(self,cmd):
         return exec_this_cli_cmd(self,cmd)
+
+class win_box():
+    hostname=None
+    shell=None
+    user='Administrator'
+    COMMAND_PROMPT= re.compile('Administrator\@\S+\s+\S+')
+    password= re.compile('Administrator\@\S+\s+password')
+    def get_login(self):
+        login(self)
+    def start_dd(self):
+        cmd= 'dd if=\'\\\\.\\PhysicalDrive3\' of=/dev/null bs=64k count=10000 &'
+        return exec_this_shell_cmd(self,cmd)
+
 
 
 class loadgen_box(va_box):
@@ -114,13 +130,16 @@ params= ''' -oStrictHostKeyChecking=no
 
 def login(self,access='shell'):
     hostname= self.hostname
-    cmd1 = cmd + params + 'root@'+ hostname
+    user= self.user + '\@'
+    cmd1 = cmd + params + user + hostname
     child= pexpect.spawn(cmd1)    
     child.logfile = sys.stdout
-    index= child.expect(['password',self.COMMAND_PROMPT,pexpect.EOF])
+    index= child.expect([self.password,self.COMMAND_PROMPT,pexpect.EOF])
+#   import pdb; pdb.set_trace()
     if index==0:
         child.sendline( '2top90!')
         child.expect(self.COMMAND_PROMPT)
+        self.shell= child
     elif index!=1:
         print "Not able to login"
         sys.exit(0)
@@ -184,6 +203,12 @@ tarpon= va_box()
 tarpon.hostname='oak-sh809'
 tarpon.get_login()
 
+#import pdb; pdb.set_trace()
+# Windows
+win= win_box()
+win.hostname='oak-cs226'
+win.get_login()
+
 f= file_op()
 s= stats_proc()
 
@@ -195,10 +220,27 @@ def show_systems():
 def start_loadgen():
     count=0
     end= 10 * loadgen.instance;
+    print " Starting {:d} loadgen instances ..".format(end)
+    f.write_data([" Starting {:d} loadgen instances ..".format(end)])
     for i in range(1,end):
         loadgen.start_loadgen_cmd(i)
-        time.sleep(1)
+#       time.sleep(1)
     loadgen.instance+=1
+
+def connected_edges():
+    tmp= tarpon.exec_on_cli("show edge")
+    rx= re.compile('connection duration\s*:\s*(\S+)',re.IGNORECASE)
+    count=0
+#   import pdb; pdb.set_trace()
+    for i in tmp:
+        rx2= rx.search(i)
+        if rx2:
+            print rx2.group(1)
+            if rx2.group(1) != '0s':
+                count+=1
+    print '... {:d} connected edges ...'.format(count)
+
+
         
 def clear_restart_edge():
     probe.exec_on_cli("service storage restart clean")
@@ -217,7 +259,7 @@ def get_stats():
     edge_start_time= probe.exec_on_shell(date_cmd)
     edge1.start_time= edge_start_time[0]
 
-    time.sleep(30)
+    time.sleep(s.delay)
 
     core_end_time= tarpon.exec_on_shell(date_cmd)
     core1.end_time= core_end_time[0]
@@ -234,7 +276,7 @@ def get_stats():
     ret= str(s.read_stat(tarpon_stats))+' KB' 
     f.write_data([ret])
 
-    import pdb; pdb.set_trace()
+#   import pdb; pdb.set_trace()
     tup=()
     tup=('filer-latency','filer all')
     tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tup))
@@ -252,9 +294,23 @@ def get_stats():
     probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tup))
     ret= s.read_latency(probe_stats)
     f.write_data([ret])
-    import pdb; pdb.set_trace()
+#   import pdb; pdb.set_trace()
     sep= "-"*20
     f.write_data([sep])
+
+iter=15
+while iter>0:
+    clear_restart_edge()
+    restart_core()
+    time.sleep(100)
+    win.start_dd()
+    start_loadgen()
+    time.sleep(3)
+    get_stats()
+    iter-=1
+
+
+
 
 
 while 1:
@@ -265,17 +321,24 @@ while 1:
     print "\t\t31. Clean restart probe edge\n"
     print "\t\t32. restart core\n"
     print "\t\t33. kill loadgens\n"
+    print "\t\t34. show connected edges\n"
+    print "\t\t35. win start dd\n"
 #   import pdb; pdb.set_trace()
     in1=raw_input("Enter here:")
     print in1
 
+    if in1 == '':
+        continue
+
     options = {
             '10':start_loadgen,
-            '20':exit,
+            '20':sys.exit,
             '30':get_stats,
             '31':clear_restart_edge,
             '32':restart_core,
-            '33':kill_loadgen,
+            '33':loadgen.kill_loadgen,
+            '34':connected_edges,
+            '35':win.start_dd,
             }
 
     options[in1]()
