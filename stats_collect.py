@@ -6,16 +6,17 @@ import re
 import json
 
 
-loadgen_cmd='/var/loadgen_edge.dbg -f '
+perl_wrap= 'nohup perl -e \'$i=5;while ($i) {system (\"%s%s%s%s\");$i--;sleep 1}\'&'
+loadgen_cmd="/var/loadgen_edge.dbg -f "
 loadgen_cfg=" /var/cfg/loadgen-{:d}.xml "
-loadgen_args=" --test-duration 1500 --read-op --lba-cnt 19531250 --burst-rate 65536 --num-ops 2,100 > "
-loadgen_logs=" logx/{:d}.txt 2>&1 &"
+loadgen_args=" --test-duration 1500 --read-op --lba-cnt 97656250 --burst-rate 65536 --num-ops 2,100 > "
+loadgen_logs=" logx/{:d}.txt 2>&1 "
 
 
 class file_op():
     handle=None
     def __init__(self):
-        self.handle= open('stats_collect.64k','w')
+        self.handle= open('stats_collect.512k','w',0)
     def write_data(self,data):
         for d in data:
             self.handle.write("%s\n" % d)
@@ -33,7 +34,7 @@ class metrics():
 class stats_proc(file_op):
     rx1= re.compile('Total (data|bytes) read\s*:\s*(\S+)\s*(\S+)',re.IGNORECASE)
     rx3= re.compile('Avg Read IO Time\s*:\s*(\S+)\s*(\S+)',re.IGNORECASE)
-    delay=150
+    delay=180
     def read_stat(self,data): 
         for i in data:
             rx2= self.rx1.search(i)
@@ -87,24 +88,28 @@ class win_box():
     def get_login(self):
         login(self)
     def start_dd(self):
-        cmd= 'dd if=\'\\\\.\\PhysicalDrive3\' of=/dev/null bs=64k count=10000 &'
+        exec_this_shell_cmd(self,'ls /cygdrive/d')
+        cmd= 'dd if=\'\\\\.\\PhysicalDrive3\' of=/dev/null bs=512k count=100000 &'
         return exec_this_shell_cmd(self,cmd)
 
 
 
 class loadgen_box(va_box):
-    instance=1
+    instance=0
     def get_login(self):
         super(loadgen_box,self).get_login()
         super(loadgen_box,self).exec_on_shell('cd /var')
 
     def kill_loadgen(self):
-        super(loadgen_box,self).exec_on_shell('pkill loadgen')
+        super(loadgen_box,self).exec_on_shell('pkill perl; pkill loadgen')
+        
+    def loadgen_rm_core(self):
+        super(loadgen_box,self).exec_on_shell('rm -f /var/core*')
 
     def start_loadgen_cmd(self,count):
         cfg= loadgen_cfg.format(count)
         log= loadgen_logs.format(count)
-        self.exec_on_shell(loadgen_cmd+cfg+loadgen_args+log)
+        self.exec_on_shell(perl_wrap%(loadgen_cmd,cfg,loadgen_args,log))
 
 stor_stats= 'show stats storage '
 stor_stats1= '{:s} start-time \'{:s}\' end-time \'{:s}\' {:s} '
@@ -134,6 +139,7 @@ def login(self,access='shell'):
     cmd1 = cmd + params + user + hostname
     child= pexpect.spawn(cmd1)    
     child.logfile = sys.stdout
+#   child.logfile = open('py_logfile','w',0)
     index= child.expect([self.password,self.COMMAND_PROMPT,pexpect.EOF])
 #   import pdb; pdb.set_trace()
     if index==0:
@@ -218,27 +224,29 @@ def show_systems():
         print i
 
 def start_loadgen():
-    count=0
+    loadgen.instance+=1
     end= 10 * loadgen.instance;
     print " Starting {:d} loadgen instances ..".format(end)
     f.write_data([" Starting {:d} loadgen instances ..".format(end)])
     for i in range(1,end):
         loadgen.start_loadgen_cmd(i)
 #       time.sleep(1)
-    loadgen.instance+=1
 
 def connected_edges():
-    tmp= tarpon.exec_on_cli("show edge")
-    rx= re.compile('connection duration\s*:\s*(\S+)',re.IGNORECASE)
     count=0
-#   import pdb; pdb.set_trace()
-    for i in tmp:
-        rx2= rx.search(i)
-        if rx2:
-            print rx2.group(1)
-            if rx2.group(1) != '0s':
-                count+=1
-    print '... {:d} connected edges ...'.format(count)
+    while count < loadgen.instance*10:
+        count=0
+        tmp= tarpon.exec_on_cli("show edge")
+        rx= re.compile('connection duration\s*:\s*(\S+)',re.IGNORECASE)
+#       import pdb; pdb.set_trace()
+        for i in tmp:
+            rx2= rx.search(i)
+            if rx2:
+                if rx2.group(1) != '0s':
+                    count+=1
+        print '... {:d} connected edges ...'.format(count)
+        f.write_data(['... {:d} connected edges ...'.format(count)])
+        time.sleep(15)
 
 
         
@@ -273,44 +281,72 @@ def get_stats():
     tup=()
     tup=('filer-bytes','filer all')
     tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tup))
-    ret= str(s.read_stat(tarpon_stats))+' KB' 
-    f.write_data([ret])
+    f.write_data(tarpon_stats)
+#   ret= str(s.read_stat(tarpon_stats))+' KB' 
+#   f.write_data([ret])
+
+    sep= " "*50
+    f.write_data([sep])
 
 #   import pdb; pdb.set_trace()
     tup=()
     tup=('filer-latency','filer all')
     tarpon_stats= tarpon.exec_on_cli(core1.form_stats_cmd(tup))
-    ret= s.read_latency(tarpon_stats)
-    f.write_data([ret])
+    f.write_data(tarpon_stats)
+#   ret= s.read_latency(tarpon_stats)
+#   f.write_data([ret])
+
+    sep= " "*50
+    f.write_data([sep])
 
     tup=()
     tup=('lun-bytes','lun all')
     probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tup))
-    ret= str(s.read_stat(probe_stats))+' KB' 
-    f.write_data([ret])
+    f.write_data(probe_stats)
+#   ret= str(s.read_stat(probe_stats))+' KB' 
+#   f.write_data([ret])
+
+    sep= " "*50
+    f.write_data([sep])
 
     tup=()
     tup=('lun-latency','lun all')
     probe_stats= probe.exec_on_cli(edge1.form_stats_cmd(tup))
-    ret= s.read_latency(probe_stats)
-    f.write_data([ret])
+    f.write_data(probe_stats)
+#   ret= s.read_latency(probe_stats)
+#   f.write_data([ret])
 #   import pdb; pdb.set_trace()
-    sep= "-"*20
+    sep= "-"*50
     f.write_data([sep])
+
+#import pdb; pdb.set_trace()
+#loadgen.loadgen_rm_core()
+#start_loadgen()
+#connected_edges()
+
+loadgen.kill_loadgen()
+clear_restart_edge()
+restart_core()
+time.sleep(100)
+win.start_dd()
+time.sleep(3)
+get_stats()
+
 
 iter=15
 while iter>0:
+    loadgen.kill_loadgen()
     clear_restart_edge()
     restart_core()
     time.sleep(100)
-    win.start_dd()
+    loadgen.loadgen_rm_core()
     start_loadgen()
-    time.sleep(3)
+    connected_edges()
+    time.sleep(5)
+    win.start_dd()
+    time.sleep(20)
     get_stats()
     iter-=1
-
-
-
 
 
 while 1:
