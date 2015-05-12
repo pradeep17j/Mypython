@@ -1,0 +1,2 @@
+ PowerCLI> get-vm |where {$_.Name -match "s?n"} | stop-vm
+

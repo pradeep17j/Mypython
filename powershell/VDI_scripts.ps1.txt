@@ -1,0 +1,6 @@
+ PowerCLI> get-vm |where {$_.Name -match "s\dn"} | stop-vm
+
+9205592338400143704616
+9205592338400143704692
+
+

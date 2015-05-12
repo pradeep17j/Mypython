@@ -1,0 +1,3 @@
+#Get-HardDisk -VM VirtualGC_FC | where {$_.Filename -match "000eb64390a"} | Remove-HardDisk -Confirm -DeletePermanently
+Get-HardDisk -VM VirtualGC_FC | where {$_.Filename -notmatch "4df0eb08-c79fc379-24f4-000eb64390a1"} | Remove-HardDisk -Confirm -DeletePermanently
+
