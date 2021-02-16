@@ -1,0 +1,25 @@
+s1 = '2021-01-27T16:07:46.548+0000 DEBUG [3ef155af56396b71,9dd7] [c.v.v.c.s.i.ClusterManagerSpecClientImpl,dm-exec-6]  Getting AddClusterUberSpec for executionId: 1408af1c-7d0b-4cb0-af8e-4bc19c91ca44' 
+s2 = '2021-01-28T17:18:56.548+0000 DEBUG [3ef155af56396b71,9dd7] [c.v.v.c.s.i.ClusterManagerSpecClientImpl,dm-exec-6]  Getting AddClusterUberSpec for executionId: 1408af1c-7d0b-4cb0-af8e-4bc19c91ca44' 
+
+
+def p_time(s1):
+    import re
+    r1 = re.compile('^(\d+-\d+-\d+)T(\d+:\d+:\d+)')
+    r2=r1.search(s1)
+    r2.group(1)
+    r2.group(2)
+    datestring= r2.group(1) +':'+ r2.group(2)
+    import time
+
+    return time.strptime(datestring, '%Y-%m-%d:%H:%M:%S')
+
+t1 = p_time(s1)
+t2 = p_time(s2)
+
+
+import datetime
+t11 = datetime.datetime(t1.tm_year,t1.tm_mon,t1.tm_mday,t1.tm_hour,t1.tm_min,t1.tm_sec)
+t12 = datetime.datetime(t2.tm_year,t2.tm_mon,t2.tm_mday,t2.tm_hour,t2.tm_min,t2.tm_sec)
+print((t1))
+t3=t12-t11
+print((t3.total_seconds()/60))
