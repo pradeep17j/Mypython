@@ -9,7 +9,7 @@ while i<2:
     bs=512
     count=1
     skip=0
-    cmd = "dd if=/dev/sda of=save.bin bs={} 512={} count=1".format(bs,count)
+    cmd = "dd if=/dev/sda of=save.bin bs={} count={} skip={}".format(bs,count,skip)
     process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     out, err = process.communicate()
 
