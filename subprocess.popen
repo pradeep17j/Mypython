@@ -1,0 +1,27 @@
+import subprocess
+
+import pdb
+#pdb.set_trace()
+
+i=0
+while i<2:
+
+    bs=512
+    count=1
+    skip=0
+    cmd = "dd if=/dev/sda of=save.bin bs={} 512={} count=1".format(bs,count)
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+
+    print(out)
+    print(err)
+
+    cmd = "diff save.bin sig.bin "
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+
+    print(out)
+    print(err)
+
+    i= i+1
+    skip=skip+1000
